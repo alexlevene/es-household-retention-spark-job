@@ -1,0 +1,25 @@
+FROM 085170591206.dkr.ecr.us-east-1.amazonaws.com/sbt-spark-builder:latest as BASE_BUILD
+
+ARG APP_VERSION
+WORKDIR /code
+
+# Add in important dependency related files to allow for caching
+ADD build.sbt /code
+ADD project/build.properties /code/project/build.properties
+ADD project/plugins.sbt /code/project/plugins.sbt
+RUN ["sbt", "update"]
+
+# Add in the code (i.e. the most volatile piece to leverage caching above)
+ADD src/ /code/src
+RUN sbt "set version := \"$APP_VERSION\"" assembly
+
+# Now run the slimmed down version where we copy out the JAR
+FROM 085170591206.dkr.ecr.us-east-1.amazonaws.com/spark-run:latest
+
+ENV LOCAL_PATH="/code/*$APP_VERSION.jar"
+WORKDIR /code
+
+# Add in important dependency related files to allow for caching
+ADD Makefile /code/
+COPY --from=BASE_BUILD /code/target/scala-2.11/*$APP_VERSION.jar /code/
+ENTRYPOINT ["make", "run-local"]
