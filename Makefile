@@ -1,4 +1,4 @@
-BASE_JAR_NAME = $(shell cat build.sbt | grep '^name' | awk '{gsub(/"/, "", $$3); print $$3}')
+BASE_JAR_NAME = "SPARK_JOB_TEMPLATE"
 GIT_REV=$(shell git rev-parse --short HEAD)
 LOCAL_PATH ?= "$(BASE_JAR_NAME)-assembly-$(GIT_REV).jar"
 S3_BASE_BUCKET = "exp-spark-jars"
