@@ -31,4 +31,5 @@ make run-local
 ### Step 7: Create a new repository in gitlab
 
 ### Step 8: Point this folder at the new gitlab repo
-edit .git/config
+git remote remove origin
+git remote add origin <NEW_REPO_URL>
