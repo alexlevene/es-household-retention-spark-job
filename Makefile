@@ -14,6 +14,9 @@ EMRFS_STEP_NAME=$(subst SparkJob,EMRFSCleanup,$(STEP_NAME))
 # EMR_CLUSTER="j-1FYW32NU8NWIO"
 # cluster two - preferrred - dev-exp-emr-2 (https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:j-3FB4H204JBWEN)
 EMR_CLUSTER="j-3FB4H204JBWEN"
+REMOTE_PATH=/home/hadoop/$(LOCAL_PATH)
+REMOTE_HOST=hadoop@ec2-54-236-14-0.compute-1.amazonaws.com
+
 REMOTE_ARGS=$(shell echo $(ARGS) | tr " " ",")
 EMR_KEY_PATH=~/.ssh/dev-exp-client-data.pem
 
@@ -78,10 +81,9 @@ else
 	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(BASE_JAR_NAME)",ActionOnFailure=CONTINUE,Args=[--master,yarn,--deploy-mode,cluster,--class,$(MAIN_CLASS),$(S3_PATH),$(REMOTE_ARGS)]
 endif
 
-run-remote-client-mode: s3-upload
+run-remote-client-mode: upload
 ifeq ($(strip $(ARGS)),)
-	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(STEP_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(S3_PATH)]
+	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(STEP_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(REMOTE_PATH)]
 else
-	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(STEP_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(S3_PATH),$(REMOTE_ARGS)]
+	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(STEP_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(REMOTE_PATH),$(REMOTE_ARGS)]
 endif
-

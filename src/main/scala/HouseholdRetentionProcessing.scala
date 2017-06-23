@@ -29,6 +29,7 @@ import org.apache.spark.sql.DataFrame
 
 // sample local command to run locally:
 //make run-local ARGS="DEMO elasticsearch.exp-dev.io exp_rjj_1_2 10000"
+//make run-local ARGS="DEMO 100.70.102.71 exp_rjj_1_2 10000"
 
 object HouseholdRetentionProcessing {
 
@@ -37,8 +38,7 @@ object HouseholdRetentionProcessing {
   var esServerPort:Int = 9200
   var esIndexName:String = "exp_rjj_1_2"
   var clientCode:String = "DEMO"
-
-
+  var batchSize:Int = 100
 
   case class date_range (
       gte: Long,
@@ -62,21 +62,35 @@ object HouseholdRetentionProcessing {
       household_income_range: household_income_range,
       household_retention_history: Array[household_retention_history]
       )
-
   case class household_no_income_range (
       household_number: String,
       household_retention_history: Array[household_retention_history]
       )
-
-
   def main(args:Array[String]):Unit = {
+
+    if (args.length != 4) {
+      throw new IllegalArgumentException("Usage: HouseholdRetentionProcessing <client code> <elasticSearch host name> <elasticSearch Index Name> <batch processing size>")  // all other input
+    }
+
+    clientCode = args(0)
+    esServer = args(1)
+    esIndexName = args(2)
+    batchSize = args(3).toInt
+
+    println("-------------------------------- PROCESS START")
+
+    println(s"clientCode: ${clientCode}")
+    println(s"esServer: ${esServer}")
+    println(s"esIndexName: ${esIndexName}")
+    println(s"batchSize: ${batchSize}")
+
     // Create a SparkSession
     val spark = SparkSession
      .builder()
      .getOrCreate()
     import spark.implicits._
 
-    processHouseholdRetentionRetained(spark) 
+    processHouseholdRetentionRetained(spark,batchSize) 
     processHouseholdRetentionNotRetained(spark)
 
     spark.stop
