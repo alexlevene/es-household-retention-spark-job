@@ -8,7 +8,10 @@ LOCAL_PREFIX="local-"
 MAIN_CLASS="Main"
 ECR_BASE_NAME="085170591206.dkr.ecr.us-east-1.amazonaws.com"
 ECR_IMAGE=$(BASE_JAR_NAME)
-EMR_CLUSTER="j-1FYW32NU8NWIO"
+# cluster one - not preferrred - (running zeppelin) - dev-exp-emr (https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:j-1FYW32NU8NWIO)
+# EMR_CLUSTER="j-1FYW32NU8NWIO"
+# cluster two - preferrred - dev-exp-emr-2 (https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:j-3FB4H204JBWEN)
+EMR_CLUSTER="j-3FB4H204JBWEN"
 
 # A bit meta...I know, but it is easier to pass in git info than rely on it in our image
 build-docker:
@@ -44,9 +47,9 @@ test:
 
 run-local:
 ifeq ($(strip $(ARGS)),)
-	/opt/spark/bin/spark-submit --master local[*] $(LOCAL_PATH)
+	/usr/local/bin/spark-submit --master local[*] $(LOCAL_PATH)
 else
-	/opt/spark/bin/spark-submit --master local[*] $(LOCAL_PATH) $(ARGS)
+	/usr/local/bin/spark-submit --master local[*] $(LOCAL_PATH) $(ARGS)
 endif
 
 s3-upload: build-docker

@@ -3,3 +3,4 @@ project/project
 project/target
 target
 es-household-retention-spark-job-assembly-*.jar
+.idea
