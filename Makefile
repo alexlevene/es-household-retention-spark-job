@@ -1,17 +1,21 @@
-BASE_JAR_NAME = "es-household-retention-spark-job"
+BASE_JAR_NAME=es-household-retention-spark-job
 GIT_REV=$(shell git rev-parse --short HEAD)
-LOCAL_PATH ?= "$(BASE_JAR_NAME)-assembly-$(GIT_REV).jar"
-S3_BASE_BUCKET = "exp-spark-jars"
-S3_PATH = "s3://$(S3_BASE_BUCKET)/$(BASE_JAR_NAME)/$(LOCAL_PATH)"
-LOCAL_BUILD_PREFIX="local-build-"
-LOCAL_PREFIX="local-"
-MAIN_CLASS="Main"
+LOCAL_PATH?="$(BASE_JAR_NAME)-assembly-$(GIT_REV).jar"
+S3_BASE_BUCKET=exp-spark-jars
+S3_PATH="s3://$(S3_BASE_BUCKET)/$(BASE_JAR_NAME)/$(LOCAL_PATH)"
+LOCAL_BUILD_PREFIX=local-build-
+LOCAL_PREFIX=local-
+MAIN_CLASS="com.healthgrades.edp.spark.HouseholdRetentionProcessing"
 ECR_BASE_NAME="085170591206.dkr.ecr.us-east-1.amazonaws.com"
 ECR_IMAGE=$(BASE_JAR_NAME)
+STEP_NAME=HouseholdRetentionProcessing
+EMRFS_STEP_NAME=$(subst SparkJob,EMRFSCleanup,$(STEP_NAME))
 # cluster one - not preferrred - (running zeppelin) - dev-exp-emr (https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:j-1FYW32NU8NWIO)
 # EMR_CLUSTER="j-1FYW32NU8NWIO"
 # cluster two - preferrred - dev-exp-emr-2 (https://console.aws.amazon.com/elasticmapreduce/home?region=us-east-1#cluster-details:j-3FB4H204JBWEN)
 EMR_CLUSTER="j-3FB4H204JBWEN"
+REMOTE_ARGS=$(shell echo $(ARGS) | tr " " ",")
+EMR_KEY_PATH=~/.ssh/dev-exp-client-data.pem
 
 # A bit meta...I know, but it is easier to pass in git info than rely on it in our image
 build-docker:
@@ -64,3 +68,20 @@ ifeq ($(strip $(ARGS)),)
 else
 	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(BASE_JAR_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(S3_PATH),$(REMOTE_ARGS)]
 endif
+
+
+
+run-remote-cluster-mode: s3-upload
+ifeq ($(strip $(ARGS)),)
+	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(BASE_JAR_NAME)",ActionOnFailure=CONTINUE,Args=[--master,yarn,--deploy-mode,cluster,--class,$(MAIN_CLASS),$(S3_PATH)]
+else
+	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(BASE_JAR_NAME)",ActionOnFailure=CONTINUE,Args=[--master,yarn,--deploy-mode,cluster,--class,$(MAIN_CLASS),$(S3_PATH),$(REMOTE_ARGS)]
+endif
+
+run-remote-client-mode: s3-upload
+ifeq ($(strip $(ARGS)),)
+	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(STEP_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(S3_PATH)]
+else
+	aws emr add-steps --cluster-id $(EMR_CLUSTER) --steps Type=Spark,Name="$(STEP_NAME)",ActionOnFailure=CONTINUE,Args=[--class,$(MAIN_CLASS),$(S3_PATH),$(REMOTE_ARGS)]
+endif
+

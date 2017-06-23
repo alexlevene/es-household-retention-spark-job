@@ -1,4 +1,6 @@
 
+package com.healthgrades.edp.spark
+
 // dependencies required for elasticsearch direct access via REST client interface
 import org.apache.http.client.methods.HttpPost
 import org.apache.http.entity.StringEntity
@@ -24,7 +26,11 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.DataFrame
 
-object Main {
+
+// sample local command to run locally:
+//make run-local ARGS="DEMO elasticsearch.exp-dev.io exp_rjj_1_2 10000"
+
+object HouseholdRetentionProcessing {
 
   var esServer:String = "100.70.102.71"
   var esWriteOperation:String = "upsert"
