@@ -35,10 +35,12 @@ object HouseholdRetentionProcessing {
 
   var esServer:String = "100.70.102.71"
   var esWriteOperation:String = "upsert"
+  var esBatchSize:String = "20mb"
   var esServerPort:Int = 9200
   var esIndexName:String = "exp_rjj_1_2"
   var clientCode:String = "DEMO"
-  var batchSize:Int = 100
+  var batchSize:Int = 10000
+  var defaultLogLevel = "INFO"
 
   case class date_range (
       gte: Long,
@@ -69,26 +71,46 @@ object HouseholdRetentionProcessing {
   def main(args:Array[String]):Unit = {
 
     if (args.length != 4) {
-      throw new IllegalArgumentException("Usage: HouseholdRetentionProcessing <client code> <elasticSearch host name> <elasticSearch Index Name> <batch processing size>")  // all other input
+      // if no args then get config from environment variables
+      clientCode = scala.util.Properties.envOrElse("CLIENT_CODE", clientCode)
+      esServer = scala.util.Properties.envOrElse("ES_HOST", esServer)
+      esIndexName = scala.util.Properties.envOrElse("ES_INDEX", esIndexName)
+      esServerPort = scala.util.Properties.envOrElse("ES_PORT", esServerPort.toString).toInt
+      batchSize = scala.util.Properties.envOrElse("SPARK_PROCESS_BATCH_SIZE", batchSize.toString).toInt
+      esBatchSize = scala.util.Properties.envOrElse("ES_WRITE_BATCH_SIZE", esBatchSize)
+    } else {
+      clientCode = args(0)
+      esServer = args(1)
+      esIndexName = args(2)
+      batchSize = args(3).toInt
     }
-
-    clientCode = args(0)
-    esServer = args(1)
-    esIndexName = args(2)
-    batchSize = args(3).toInt
 
     println("-------------------------------- PROCESS START")
 
     println(s"clientCode: ${clientCode}")
     println(s"esServer: ${esServer}")
+    println(s"esServerPort: ${esServerPort}")
     println(s"esIndexName: ${esIndexName}")
     println(s"batchSize: ${batchSize}")
+    println(s"esBatchSize: ${esBatchSize}")
+
+
+    
 
     // Create a SparkSession
     val spark = SparkSession
-     .builder()
-     .getOrCreate()
+      .builder()
+      .appName("HouseholdRetentionProcessing")
+      .config("es.index.auto.create", false)
+      .config("es.nodes", scala.util.Properties.envOrElse("ES_HOST", esServer))
+      .config("es.nodes.wan.only", false)
+      .config("es.write.operation", esWriteOperation)
+      .config("es.batch.size.bytes", esBatchSize)
+      .getOrCreate()
     import spark.implicits._
+
+    // set the logging level
+    spark.sparkContext.setLogLevel(scala.util.Properties.envOrElse("LOG_LEVEL", defaultLogLevel))
 
     processHouseholdRetentionRetained(spark,batchSize) 
     processHouseholdRetentionNotRetained(spark)

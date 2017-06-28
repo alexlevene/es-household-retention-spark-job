@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "es-household-retention-spark-job"
+spec:
+  containers:
+  - name: "es-household-retention-spark-job"
+    #image pull policy for local testing
+    imagePullPolicy: IfNotPresent
+    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:100a030
+    env:
+      - name: CLIENT_CODE
+        value: "DEMO"
+      - name: ES_HOST
+        value: "100.70.102.71"
+      - name: ES_INDEX
+        value: "exp_rjj_1_2"
+      - name: SPARK_PROCESS_BATCH_SIZE
+        value: "100000"
+      - name: ES_WRITE_BATCH_SIZE
+        value: "20mb"
+      - name: ES_PORT
+        value: "9200"
+ 
+  restartPolicy: Never
+
+  # static config a la /values/edp/thing
+  # check out common config/external dns in /charts/aurora
+# spark.sparkContext.setLogLevel('WARN')
+# to set the context to the dev cluster 
+# kubectl config use-context kube-spantree.emp.healthgrades.io
+# to set context back to local cluster
+# kubectl config use-context minikube
+
+# to run this pod 
+# kubectl create -f pod.yaml 
+
+# to follow the pod logs 
+# kubectl logs --follow es-household-retention-spark-job
+# to attach to the pod
+# kubectl attach es-household-retention-spark-job -i
+# to prematurely kill the pod
+# kubectl delete -f pod.yaml
+
