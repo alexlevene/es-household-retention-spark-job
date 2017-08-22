@@ -9,22 +9,13 @@ import org.apache.http.impl.client.BasicResponseHandler
 import java.util.Date
 import java.util.Calendar
 import org.apache.commons.lang3.time.DateUtils
-import java.text.SimpleDateFormat
 import scala.collection.mutable.WrappedArray
-
-import org.apache.spark.sql.SQLContext
-import org.apache.spark.sql.SQLContext._
-import org.apache.spark.sql.functions._
 
 import org.elasticsearch.spark.sql._
 import org.elasticsearch.spark._
-import org.elasticsearch.spark.rdd.Metadata._ 
-
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkContext._
+import org.apache.spark.sql.Row
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.DataFrame
 
 
 // sample local command to run locally:
@@ -33,11 +24,11 @@ import org.apache.spark.sql.DataFrame
 
 object HouseholdRetentionProcessing {
 
-  var esServer:String = "100.70.102.71"
+  var esServer:String = "exp-elasticsearch.default.svc.cluster.local"
   var esWriteOperation:String = "upsert"
   var esBatchSize:String = "20mb"
   var esServerPort:Int = 9200
-  var esIndexName:String = "exp_rjj_1_2"
+  var esIndexName:String = "exp_v1_0_1"
   var clientCode:String = "DEMO"
   var batchSize:Int = 10000
   var defaultLogLevel = "INFO"
@@ -46,27 +37,9 @@ object HouseholdRetentionProcessing {
       gte: Long,
       lte: Long
       )
-  case class date_range_alt (
-      gte: String,
-      lte: String
-      )
-  case class household_income_range (
-      minimum: Long,
-      maximum: Long
-      )
   case class household_retention_history (
       date_range: date_range,
-      date_range_alt: date_range_alt,
       retained: Boolean
-      )
-  case class household (
-      household_number: String,
-      household_income_range: household_income_range,
-      household_retention_history: Array[household_retention_history]
-      )
-  case class household_no_income_range (
-      household_number: String,
-      household_retention_history: Array[household_retention_history]
       )
   def main(args:Array[String]):Unit = {
 
@@ -128,7 +101,7 @@ object HouseholdRetentionProcessing {
       val householdsWithoutRetention = s"""
       {
         "size": 0,
-        "_source": ["household.household_number"],
+        "_source": ["household.household_id"],
         "query": {
           "constant_score": {
             "filter": {
@@ -148,14 +121,14 @@ object HouseholdRetentionProcessing {
                       }
                     }
                   },
-                  {"exists": { "field": "household.household_number"} }
+                  {"exists": { "field": "household.household_id"} }
                 ],
                 "must_not": [
                   {
                     "nested": {
-                      "path": "household.household_retention_history",
+                      "path": "household_retention_history",
                       "query": {
-                        "exists": { "field": "household.household_retention_history.retained"}
+                        "exists": { "field": "household_retention_history.retained"}
                       }
                     }
                   }
@@ -167,7 +140,7 @@ object HouseholdRetentionProcessing {
         "aggs": {
           "all_households": {
             "terms": {
-              "field": "household.household_number",
+              "field": "household.household_id",
               "size": ${resultLimit},
               "order": {"_term":"asc"}
             }
@@ -216,47 +189,32 @@ object HouseholdRetentionProcessing {
 
       val sc = spark.sparkContext
       val sqlContext = spark.sqlContext
-      import sqlContext.implicits._    
+      import sqlContext.implicits._
 
       var esconf = Map("es.nodes" -> esServer, "es.write.operation" -> esWriteOperation, "es.nodes.wan.only" -> "true","es.index.auto.create" -> "false" ,"es.batch.size.bytes" -> "20mb")
 
 
-      val updates_full = householdRetentionFinal.filter("income_min is not null and income_max is not null")
-        .rdd
-        .groupBy( z => z.getAs[String]("person_key") + "|" + z.getAs[String]("household") + "|" + z.getAs[String]("income_min") +  "|" + z.getAs[String]("income_max"))
-        .map(e => (
-              Map(ID -> e._1.split("\\|")(0)),
-              Map(household ->  household(e._1.split("\\|")(1),household_income_range(e._1.split("\\|")(2).toLong,e._1.split("\\|")(3).toLong),
-                      e._2.map(a => household_retention_history(
-              date_range(a.getAs[Long]("start_date_epoch"), a.getAs[Long]("end_date_epoch")),
-              date_range_alt(a.getAs[String]("start_date"), a.getAs[String]("end_date")),
-              a.getAs[Boolean]("isRetained"))
-            ).toArray 
+    def getHouseholdRetentionHistory(rows: Iterable[Row]): Array[household_retention_history] = {
+      rows.map(a =>
+        household_retention_history(
+          date_range(a.getAs[Long]("start_date_epoch"), a.getAs[Long]("end_date_epoch")),
+          a.getAs[Boolean]("isRetained")
+        )
+      ).toArray
+    }
+    val updates_full = householdRetentionFinal
+      .rdd
+      .groupBy(z => z.getAs[String]("mastered_person_id") + "|" + z.getAs[String]("household") + "|" + z.getAs[String]("income_min") + "|" + z.getAs[String]("income_max"))
+      .map(e => (
+            e._1.split("\\|")(0),
+            Map(
+                "household_retention_history" -> getHouseholdRetentionHistory(e._2)
             )
-            )
-          ))
+         )
+      )
 
       // write elasticsearch data back to the index
       updates_full.saveToEsWithMeta(s"${esIndexName}/person", esconf)
-
-
-      val updates_no_income_range = householdRetentionFinal.filter("income_min is null or income_max is null")
-        .rdd
-        .groupBy( z => z.getAs[String]("person_key") + "|" + z.getAs[String]("household") + "|" + z.getAs[String]("income_min") +  "|" + z.getAs[String]("income_max"))
-        .map(e => (
-              Map(ID -> e._1.split("\\|")(0)),
-              Map(household ->  household_no_income_range(e._1.split("\\|")(1),
-                      e._2.map(a => household_retention_history(
-              date_range(a.getAs[Long]("start_date_epoch"), a.getAs[Long]("end_date_epoch")),
-              date_range_alt(a.getAs[String]("start_date"), a.getAs[String]("end_date")),
-              a.getAs[Boolean]("isRetained"))
-            ).toArray 
-            )
-            )
-          ))
-
-      // write elasticsearch data back to the index
-      updates_no_income_range.saveToEsWithMeta(s"${esIndexName}/person", esconf)
   } // writeHouseholdRetentionDataToPerson
 
   def processHouseholdRetentionRetained(spark:SparkSession, resultLimit:Int = 10000){
@@ -269,7 +227,7 @@ object HouseholdRetentionProcessing {
 
         val encounterSourceQuery = s"""
           {
-            "_source": ["encounter_key","parent","admit_date"],
+            "_source": ["encounter_key","mastered_person_id","admit_date"],
             "query": {
               "constant_score": {
                 "filter": {
@@ -284,7 +242,7 @@ object HouseholdRetentionProcessing {
                             "bool": {
                               "must": [
                                 { "term": {"client_code": "${clientCode}" }},
-                                {"terms": {"household.household_number": [
+                                {"terms": {"household.household_id": [
           ${householdList}
                                   ]
                                 }}
@@ -305,7 +263,7 @@ object HouseholdRetentionProcessing {
         // limit the fields that are included
         val encounterSourceQueryOptions = Map(
         //  "es.read.field.include" -> "encounter_key,parent,admit_date"
-          "es.read.field.exclude" -> "personKey,person_key,recordId,admit_age,service_category,facility,patient_lifecycle,admit_source,admit_type,client_code,client_name,discharge_date,encounter_type,financial_class,msdrg,service_sub_category,diagnosis,cpt,procedure,campaigns,total_charges,total_amount_received,expected_reimbursement,direct_costs,actual_contribution_margin,expected_contribution_margin,recency_frequency",
+          "es.read.field.exclude" -> "recordId,admit_age,service_category,facility,patient_lifecycle,admit_source,admit_type,client_code,client_name,discharge_date,encounter_type,financial_class,msdrg,service_sub_category,diagnosis,cpt,procedure,campaigns,total_charges,total_amount_received,expected_reimbursement,direct_costs,actual_contribution_margin,expected_contribution_margin,recency_frequency",
             "es.read.metadata" -> "true", "es.nodes" -> esServer, "es.write.operation" -> "upsert", "es.nodes.wan.only" -> "true","es.index.auto.create" -> "false"
           )
         
@@ -323,14 +281,14 @@ object HouseholdRetentionProcessing {
 
         val personSourceQuery = s"""
             {
-              "_source": ["_recordId","household.household_number"],
+              "_source": ["_recordId","household.household_id"],
               "query": {
                 "constant_score": {
                   "filter": {
                     "bool": {
                       "must": [
                         {"term":{"client_code" : "${clientCode}" }},
-                        {"terms": {"household.household_number": [
+                        {"terms": {"household.household_id": [
             ${householdList}
                           ]
                         }}
@@ -343,8 +301,8 @@ object HouseholdRetentionProcessing {
         """
         // limit the fields that are included
         val personSourceQueryOptions = Map(
-        //  "es.read.field.include" -> "_recordId,household.household_number"
-          "es.read.field.exclude" -> "person_key,address,birth_date,children_present,client_code,client_name,communication,email,ethnicity,first_name,gender,language,last_name,marital_status,middle_initial,middle_name,mobile_phone,payor_category,payor_category_confidence,prefix,race,religion,suffix,campaigns,recency_frequency,perceptual_profile,chui,pdi,patient_lifecycle_history,deceased_date",
+        //  "es.read.field.include" -> "_recordId,household.household_id"
+          "es.read.field.exclude" -> "address,birth_date,children_present,client_code,client_name,communication,email,ethnicity,first_name,gender,language,last_name,marital_status,middle_initial,middle_name,mobile_phone,personCount,payor_category,payor_category_confidence,patientYear,prefix,race,religion,size,suffix,campaigns,recency_frequency,perceptual_profile,chui,pdi,patient_lifecycle_history,deceased_date,household_retention_history,last_update_by_batch",
             "es.read.metadata" -> "true", "es.nodes" -> esServer, "es.write.operation" -> "upsert", "es.nodes.wan.only" -> "true","es.index.auto.create" -> "false"
           )
         
@@ -383,19 +341,19 @@ object HouseholdRetentionProcessing {
             with
             cur as (
                 select
-                household.household_number as household,
+                household.household_id as household,
                 e.admit_date,
                 date_add(e.admit_date,-365.25) as admit_date_minus1
                 from ${personView} p join ${encounterView} e on e._metadata._parent = p._metadata._id
-                group by household.household_number,e.admit_date,date_add(e.admit_date,-365.25)
+                group by household.household_id,e.admit_date,date_add(e.admit_date,-365.25)
             ),
             all as (
                 select 
-                p.household.household_number as household,
+                p.household.household_id as household,
                 d.startOfMonth,
                 0 as isRetained
                 from ${personView} p cross join ${retentionMonthView} d 
-                group by p.household.household_number,d.startOfMonth
+                group by p.household.household_id,d.startOfMonth
             ),
             retained as (
                 select cur.household,
@@ -431,7 +389,7 @@ object HouseholdRetentionProcessing {
         val max_admit_month = (new org.joda.time.LocalDate).withDayOfMonth(1)
         val householdRetentionCollapsed = spark.sql(s"""
             with retentionRanked as (
-                select 
+u               select 
                 household,
                 month_rank,
                 startOfMonth,
@@ -477,14 +435,14 @@ object HouseholdRetentionProcessing {
         val householdRetentionFinal = spark.sql(s"""
             with personToHousehold as (
                 select
-                _metadata._id as person_key,
-                cast(household.household_income_range.minimum as Long) as income_min,
-                cast(household.household_income_range.maximum as Long) as income_max,
-                household.household_number as household
+                _metadata._id as mastered_person_id,
+                cast(household.income.range.minimum as Long) as income_min,
+                cast(household.income.range.maximum as Long) as income_max,
+                household.household_id as household
                 from ${personView}
             )
             select
-            p.person_key,
+            p.mastered_person_id,
             p.income_min,
             p.income_max,
             p.household,
@@ -558,7 +516,7 @@ object HouseholdRetentionProcessing {
                   "bool": {
                     "must": [
                       {"term":{"client_code" : "${clientCode}" }},
-                      {"exists": { "field": "household.household_number"} }
+                      {"exists": { "field": "household.household_id"} }
                     ],
                     "must_not": [
                       {
@@ -579,7 +537,7 @@ object HouseholdRetentionProcessing {
         // limit the fields that are included
         val personSourceQueryOptions = Map(
         //  "es.read.field.include" -> "_recordId,household"
-          "es.read.field.exclude" -> "person_key,address,birth_date,children_present,client_code,client_name,communication,email,ethnicity,first_name,gender,language,last_name,marital_status,middle_initial,middle_name,mobile_phone,payor_category,payor_category_confidence,prefix,race,religion,suffix,campaigns,recency_frequency,perceptual_profile,chui,pdi,patient_lifecycle_history,deceased_date",
+          "es.read.field.exclude" -> "address,birth_date,children_present,client_code,client_name,communication,email,ethnicity,first_name,gender,language,last_name,marital_status,middle_initial,middle_name,mobile_phone,payor_category,payor_category_confidence,prefix,race,religion,suffix,campaigns,recency_frequency,perceptual_profile,chui,pdi,patient_lifecycle_history,deceased_date",
             "es.read.metadata" -> "true", "es.nodes" -> esServer, "es.write.operation" -> "upsert", "es.nodes.wan.only" -> "true","es.index.auto.create" -> "false"
           )
         
@@ -609,10 +567,10 @@ object HouseholdRetentionProcessing {
         // BUILD THE FINAL FRAME THAT WILL BE USED TO WRITE NON-RETAINED DATA BACK TO ELASTICSEARCH
         val householdRetentionFinal= spark.sql(s"""
             select
-            _metadata._id as person_key,
+            _metadata._id as mastered_person_id,
             cast(household.household_income_range.minimum as Long) as income_min,
             cast(household.household_income_range.maximum as Long) as income_max,
-            household.household_number as household,
+            household.household_id as household,
             date_format(from_unixtime(${min_month_epoch} / 1000),'yyyy-MM-dd') as start_date,
             date_format(from_unixtime(${max_month_epoch} / 1000),'yyyy-MM-dd HH:mm:ss') as end_date,
             ${min_month_epoch} as start_date_epoch,
