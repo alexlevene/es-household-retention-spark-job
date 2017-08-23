@@ -4,3 +4,5 @@ project/target
 target
 es-household-retention-spark-job-assembly-*.jar
 .idea
+.kube/
+*.iml

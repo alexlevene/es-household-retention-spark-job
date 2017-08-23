@@ -8,7 +8,7 @@ S3_PATH="s3://$(S3_BASE_BUCKET)/$(BASE_JAR_NAME)/$(LOCAL_PATH)"
 LOCAL_BUILD_PREFIX=local-build-
 LOCAL_PREFIX=local-
 MAIN_CLASS="com.healthgrades.edp.spark.HouseholdRetentionProcessing"
-ECR_BASE_NAME="085170591206.dkr.ecr.us-east-1.amazonaws.com"
+ECR_BASE_NAME=085170591206.dkr.ecr.us-east-1.amazonaws.com
 ECR_IMAGE=$(BASE_JAR_NAME)
 STEP_NAME=HouseholdRetentionProcessing
 EMRFS_STEP_NAME=$(subst SparkJob,EMRFSCleanup,$(STEP_NAME))
@@ -33,7 +33,7 @@ build-docker:
 
 	# Pass in the actual local path at build time because the running container
 	# doesn't have git available
-	docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${LOCAL_PREFIX}${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
+	docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${ECR_BASE_NAME}${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
 
 # Simple version of the command that assumes you have a connection to dev ES
 int-test-local:
