@@ -76,9 +76,11 @@ object HouseholdRetentionProcessing {
       .appName("HouseholdRetentionProcessing")
       .config("es.index.auto.create", false)
       .config("es.nodes", scala.util.Properties.envOrElse("ES_HOST", esServer))
-      .config("es.nodes.wan.only", false)
+      .config("es.nodes.wan.only", true)
       .config("es.write.operation", esWriteOperation)
       .config("es.batch.size.bytes", esBatchSize)
+      .config("es.net.ssl", true)
+      .config("es.net.ssl.cert.allow.self.signed", true)
       .getOrCreate()
     import spark.implicits._
 
@@ -152,7 +154,7 @@ object HouseholdRetentionProcessing {
       // generate the elasticsearch request string
       
       val endPoint = "/"+ esIndexName + "/person/_search"
-      val request_url = "http://" + esHost + ":" + esPort + endPoint
+      val request_url = "https://" + esHost + ":" + esPort + endPoint
       
       // build the apache HTTP post request
       val post = new HttpPost(request_url)
@@ -389,7 +391,7 @@ object HouseholdRetentionProcessing {
         val max_admit_month = (new org.joda.time.LocalDate).withDayOfMonth(1)
         val householdRetentionCollapsed = spark.sql(s"""
             with retentionRanked as (
-u               select 
+               select 
                 household,
                 month_rank,
                 startOfMonth,
@@ -473,8 +475,8 @@ u               select
         println("iteration " + iterationCount.toString + " household count " + lastCount.toString)
         iterationCount = iterationCount + 1
 
-        val encountersES = getEncounterSourceData(spark,clientCode,esIndexName,esServer,households)
         val personsES = getPersonSourceData(spark,clientCode,esIndexName,esServer,households)
+        val encountersES = getEncounterSourceData(spark,clientCode,esIndexName,esServer,households)
         val monthRangeFrame = getRetentionMonthRange(spark)
         val householdRetentionBase = buildHouseholdRetentionBase(spark)
         val householdRetentionCollapsed = buildHouseholdRetentionCollapsed(spark)
@@ -509,7 +511,7 @@ u               select
 
         val personSourceQuery = s"""
           {
-            "_source": ["_recordId","household"],
+            "_source": ["_recordId","mastered_person_id","household"],
             "query": {
               "constant_score": {
                 "filter": {
@@ -521,9 +523,9 @@ u               select
                     "must_not": [
                       {
                         "nested": {
-                          "path": "household.household_retention_history",
+                          "path": "household_retention_history",
                           "query": {
-                            "exists": { "field": "household.household_retention_history.retained"}
+                            "exists": { "field": "household_retention_history.retained"}
                           }
                         }
                       }
@@ -537,7 +539,7 @@ u               select
         // limit the fields that are included
         val personSourceQueryOptions = Map(
         //  "es.read.field.include" -> "_recordId,household"
-          "es.read.field.exclude" -> "address,birth_date,children_present,client_code,client_name,communication,email,ethnicity,first_name,gender,language,last_name,marital_status,middle_initial,middle_name,mobile_phone,payor_category,payor_category_confidence,prefix,race,religion,suffix,campaigns,recency_frequency,perceptual_profile,chui,pdi,patient_lifecycle_history,deceased_date",
+          "es.read.field.exclude" -> "address,birth_date,children_present,client_code,client_name,communication,email,ethnicity,first_name,gender,language,last_name,marital_status,middle_initial,middle_name,mobile_phone,personCount,payor_category,payor_category_confidence,patientYear,prefix,race,religion,size,suffix,campaigns,recency_frequency,perceptual_profile,chui,pdi,patient_lifecycle_history,deceased_date,household_retention_history,last_update_by_batch",
             "es.read.metadata" -> "true", "es.nodes" -> esServer, "es.write.operation" -> "upsert", "es.nodes.wan.only" -> "true","es.index.auto.create" -> "false"
           )
         
@@ -567,9 +569,9 @@ u               select
         // BUILD THE FINAL FRAME THAT WILL BE USED TO WRITE NON-RETAINED DATA BACK TO ELASTICSEARCH
         val householdRetentionFinal= spark.sql(s"""
             select
-            _metadata._id as mastered_person_id,
-            cast(household.household_income_range.minimum as Long) as income_min,
-            cast(household.household_income_range.maximum as Long) as income_max,
+            mastered_person_id,
+            cast(household.income.range.minimum as Long) as income_min,
+            cast(household.income.range.maximum as Long) as income_max,
             household.household_id as household,
             date_format(from_unixtime(${min_month_epoch} / 1000),'yyyy-MM-dd') as start_date,
             date_format(from_unixtime(${max_month_epoch} / 1000),'yyyy-MM-dd HH:mm:ss') as end_date,
