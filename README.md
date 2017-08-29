@@ -5,6 +5,7 @@
  * docker
  * make
  * spark binary distribution (optional)
+ * aws-cli version 1.11.91 or greater
 
 ### Step 1: Choose a name for your job.
 Choose an all-lower-case, hyphen-delimited name for job like
