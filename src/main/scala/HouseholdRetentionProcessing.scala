@@ -37,8 +37,13 @@ object HouseholdRetentionProcessing {
       gte: Long,
       lte: Long
       )
+  case class date_range_alt (
+      gte: String,
+      lte: String
+      )
   case class household_retention_history (
       date_range: date_range,
+      date_range_alt: date_range_alt,
       retained: Boolean
       )
   def main(args:Array[String]):Unit = {
@@ -200,6 +205,7 @@ object HouseholdRetentionProcessing {
       rows.map(a =>
         household_retention_history(
           date_range(a.getAs[Long]("start_date_epoch"), a.getAs[Long]("end_date_epoch")),
+          date_range_alt(a.getAs[String]("start_date"), a.getAs[String]("end_date")),
           a.getAs[Boolean]("isRetained")
         )
       ).toArray
