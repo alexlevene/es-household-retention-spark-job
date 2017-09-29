@@ -7,20 +7,28 @@ spec:
   - name: "es-household-retention-spark-job"
     #image pull policy for local testing
     imagePullPolicy: IfNotPresent
-    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:100a030
+    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:2d86043
     env:
       - name: CLIENT_CODE
-        value: "DEMO"
+        value: "TRAIN"
       - name: ES_HOST
-        value: "100.70.102.71"
+        value: "exp-elasticsearch.default.svc.cluster.local"
       - name: ES_INDEX
-        value: "exp_rjj_1_2"
+        value: "exp_v1_1_3"
+      - name: ES_REQUEST_TIMEOUT
+        value: "5m"
+      - name: ES_REQUEST_RETRY_COUNT
+        value: "10"
+      - name: REST_REQUEST_TIMEOUT
+        value: "5"
       - name: SPARK_PROCESS_BATCH_SIZE
-        value: "100000"
-      - name: ES_WRITE_BATCH_SIZE
-        value: "20mb"
+        value: "1000"
+      - name: ES_WRITE_BATCH_SIZE_BYTES
+        value: "1mb"
       - name: ES_PORT
         value: "9200"
+      - name: LOG_LEVEL
+        value: "WARN"
  
   restartPolicy: Never
 
