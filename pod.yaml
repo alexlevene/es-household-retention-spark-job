@@ -21,6 +21,8 @@ spec:
         value: "1mb"
       - name: ES_PORT
         value: "9200"
+      - name: LOG_LEVEL
+        value: "WARN"
  
   restartPolicy: Never
 
