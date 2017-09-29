@@ -24,6 +24,8 @@ EMR_KEY_PATH=~/.ssh/dev-exp-client-data.pem
 
 # A bit meta...I know, but it is easier to pass in git info than rely on it in our image
 build-docker:
+	eval `aws ecr get-login --region us-east-1 --no-include-email`
+
 	# Do the actual build
 	docker build --file Dockerfile.build --build-arg="APP_VERSION=$(GIT_REV)" -t ${LOCAL_BUILD_PREFIX}${ECR_IMAGE}:latest -t ${LOCAL_BUILD_PREFIX}${ECR_IMAGE}:$(GIT_REV) .
 	# Create an intermittent container that we can copy the JAR from
@@ -33,11 +35,13 @@ build-docker:
 
 	# Pass in the actual local path at build time because the running container
 	# doesn't have git available
-	docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${ECR_BASE_NAME}/${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
+	# docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${ECR_BASE_NAME}/${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
+	docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${LOCAL_PREFIX}${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:latest -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
 
 # Simple version of the command that assumes you have a connection to dev ES
 int-test-local:
-	docker run -it --rm -e ES_HOST="100.70.102.71" -e CLIENT_CODE="DEMO" -e ES_INDEX="exp_rjj_1_2" -e SPARK_PROCESS_BATCH_SIZE="10000" ${LOCAL_PREFIX}${ECR_IMAGE}
+	docker run --dns=100.64.0.10 -it -e CLIENT_CODE="TRAIN" -e ES_HOST="exp-elasticsearch.default.svc.cluster.local" -e LOG_LEVEL="WARN" -e ES_INDEX="exp_v1_1_3" -e ES_PORT="9200" ${LOCAL_PREFIX}${ECR_IMAGE}
+
 
 # NOTE: This can only be used locally right now due to Docker version concerns
 # Multi-stage builds are only available in Docker CE 17+ and currently our Kubernetes

@@ -7,7 +7,7 @@ spec:
   - name: "es-household-retention-spark-job"
     #image pull policy for local testing
     imagePullPolicy: IfNotPresent
-    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:{git sha}
+    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:latest
     env:
       - name: CLIENT_CODE
         value: "TRAIN"
@@ -17,7 +17,7 @@ spec:
         value: "exp_v1_1_3"
       - name: SPARK_PROCESS_BATCH_SIZE
         value: "1000"
-      - name: ES_WRITE_BATCH_SIZE
+      - name: ES_WRITE_BATCH_SIZE_BYTES
         value: "1mb"
       - name: ES_PORT
         value: "9200"
