@@ -7,7 +7,7 @@ spec:
   - name: "es-household-retention-spark-job"
     #image pull policy for local testing
     imagePullPolicy: IfNotPresent
-    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:latest
+    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:2d86043
     env:
       - name: CLIENT_CODE
         value: "TRAIN"

@@ -36,7 +36,7 @@ build-docker:
 	# Pass in the actual local path at build time because the running container
 	# doesn't have git available
 	# docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${ECR_BASE_NAME}/${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
-	docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${LOCAL_PREFIX}${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:latest -t ${ECR_BASE_NAME}/${ECR_IMAGE}:${GIT_REV} .
+	docker build --build-arg="LOCAL_PATH=$(LOCAL_PATH)" -t ${LOCAL_PREFIX}${ECR_IMAGE} -t ${ECR_BASE_NAME}/${ECR_IMAGE}:latest -t ${ECR_BASE_NAME}/${ECR_IMAGE}:$(GIT_REV) .
 
 # Simple version of the command that assumes you have a connection to dev ES
 int-test-local:
@@ -50,8 +50,8 @@ build-multistage:
 	docker build --file Dockerfile.multistage --build-arg="APP_VERSION=$(GIT_REV)" -t multistage-${ECR_IMAGE} .
 
 push-docker:
-	eval $(aws ecr get-login --region us-east-1)
-	docker push ${ECR_BASE_NAME}/${ECR_IMAGE}
+	eval `aws ecr get-login --region us-east-1 --no-include-email`
+	docker push ${ECR_BASE_NAME}/${ECR_IMAGE}:latest
 
 update:
 	sbt update

@@ -315,45 +315,13 @@ object HouseholdRetentionProcessing {
           }
         """
 
-        val encounterSourceQueryAll = s"""
-          {
-            "query": {
-              "constant_score": {
-                "filter": {
-                  "bool": {
-                    "must": [
-                      {"term":{"client_code" : "${clientCode}" }},
-                      { "range": {"admit_date": {"gte": "now-5y", "lte": "now"}}},
-                      {
-                        "has_parent": {
-                          "parent_type": "person",
-                          "query": {
-                            "bool": {
-                              "must": [
-                                { "term": {"client_code": "${clientCode}" }},
-                                { "exists": { "field": "household.household_id"} }
-                              ],
-                              "must_not": [
-                              ]
-                            }
-                          }
-                        } 
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        """
-
         // limit the fields that are included
         val encounterSourceQueryOptions = Map(
           "es.read.source.filter" -> "admit_date",
           "es.read.metadata" -> "true"
         )
 
-        val allEncountersWithHouseholdRDD = EsSpark.esJsonRDD(sc, s"${esIndexName}/encounter", encounterSourceQueryAll, encounterSourceQueryOptions)
+        val allEncountersWithHouseholdRDD = EsSpark.esJsonRDD(sc, s"${esIndexName}/encounter", encounterSourceQuery, encounterSourceQueryOptions)
 
         // get jsonMap of response as second item of tuple
         val encountersJson = allEncountersWithHouseholdRDD.map[String](d => d._2)
@@ -412,32 +380,13 @@ object HouseholdRetentionProcessing {
           }
         """
 
-        val personSourceQueryAll = s"""
-          {
-            "query": {
-              "constant_score": {
-                "filter": {
-                  "bool": {
-                    "must": [
-                      {"term":{"client_code" : "${clientCode}" }},
-                      { "exists": { "field": "household.household_id"} }
-                    ],
-                    "must_not": [
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        """
-
 
         val personSourceQueryOptions = Map(
           "es.read.source.filter" -> "household.household_id",
           "es.read.metadata" -> "true"
         )
         
-        val allPersonsWithHouseholdsRDD = EsSpark.esJsonRDD(sc, s"${esIndexName}/person", personSourceQueryAll, personSourceQueryOptions)
+        val allPersonsWithHouseholdsRDD = EsSpark.esJsonRDD(sc, s"${esIndexName}/person", personSourceQuery, personSourceQueryOptions)
         
         // get jsonMap of response as second item of tuple
         val personsJson = allPersonsWithHouseholdsRDD.map[String](d => d._2)
@@ -679,40 +628,13 @@ object HouseholdRetentionProcessing {
             }
           }
         """
-
-       val personSourceQueryAll = s"""
-          {
-            "query": {
-              "constant_score": {
-                "filter": {
-                  "bool": {
-                    "must": [
-                      {"term":{"client_code" : "${clientCode}" }},
-                      { "exists": { "field": "household.household_id"} }
-                    ],
-                    "must_not": [
-                      {
-                        "nested": {
-                          "path": "household_retention_history",
-                          "query": {
-                            "exists": { "field": "household_retention_history.retained"}
-                          }
-                        }
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        """
         
         val personSourceQueryOptions = Map(
           "es.read.source.filter" -> "household.household_id",
           "es.read.metadata" -> "true"
         )
         
-        val allPersonsWithHouseholdsRDD = EsSpark.esJsonRDD(sc, s"${esIndexName}/person", personSourceQueryAll, personSourceQueryOptions)
+        val allPersonsWithHouseholdsRDD = EsSpark.esJsonRDD(sc, s"${esIndexName}/person", personSourceQuery, personSourceQueryOptions)
         
         // get jsonMap of response as second item of tuple
         val personsJson = allPersonsWithHouseholdsRDD.map[String](d => d._2)
