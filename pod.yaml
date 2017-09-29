@@ -15,6 +15,12 @@ spec:
         value: "exp-elasticsearch.default.svc.cluster.local"
       - name: ES_INDEX
         value: "exp_v1_1_3"
+      - name: ES_REQUEST_TIMEOUT
+        value: "5m"
+      - name: ES_REQUEST_RETRY_COUNT
+        value: "10"
+      - name: REST_REQUEST_TIMEOUT
+        value: "5"
       - name: SPARK_PROCESS_BATCH_SIZE
         value: "1000"
       - name: ES_WRITE_BATCH_SIZE_BYTES
