@@ -10,15 +10,15 @@ spec:
     image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:{git sha}
     env:
       - name: CLIENT_CODE
-        value: "DEMO"
+        value: "TRAIN"
       - name: ES_HOST
         value: "exp-elasticsearch.default.svc.cluster.local"
       - name: ES_INDEX
-        value: "exp_v1_0_1"
+        value: "exp_v1_1_3"
       - name: SPARK_PROCESS_BATCH_SIZE
-        value: "100000"
+        value: "1000"
       - name: ES_WRITE_BATCH_SIZE
-        value: "20mb"
+        value: "1mb"
       - name: ES_PORT
         value: "9200"
  
