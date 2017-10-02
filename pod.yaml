@@ -7,10 +7,10 @@ spec:
   - name: "es-household-retention-spark-job"
     #image pull policy for local testing
     imagePullPolicy: IfNotPresent
-    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:2d86043
+    image: 085170591206.dkr.ecr.us-east-1.amazonaws.com/es-household-retention-spark-job:e78fd85
     env:
       - name: CLIENT_CODE
-        value: "TRAIN"
+        value: "DEMO"
       - name: ES_HOST
         value: "exp-elasticsearch.default.svc.cluster.local"
       - name: ES_INDEX

@@ -6,12 +6,15 @@ import org.apache.http.client.methods.HttpPost
 import org.apache.http.entity.StringEntity
 import org.apache.http.impl.client.DefaultHttpClient
 import org.apache.http.impl.client.BasicResponseHandler
+
+import org.apache.http.params.BasicHttpParams
+import org.apache.http.params.HttpConnectionParams
+import org.apache.http.params.HttpParams
+
 import java.util.Date
 import java.util.Calendar
 import org.apache.commons.lang3.time.DateUtils
 import scala.collection.mutable.WrappedArray
-
-
 
 import org.apache.spark.sql.functions.explode
 import org.apache.spark.sql.SparkSession
@@ -126,6 +129,38 @@ object HouseholdRetentionProcessing {
     spark.stop
     println("Done")
   }
+
+
+  def restCall(endPoint:String, esServer:String, esPort:Int, postBody:String, timeoutSeconds:Int = 5):String = {
+
+    val request_url = "https://" + esServer + ":" + esPort + endPoint
+
+    // build the apache HTTP post request
+    val post = new HttpPost(request_url)
+
+    // set the connection timeout for the request
+    var timeoutMilliseconds = 1000 * timeoutSeconds
+    if (timeoutMilliseconds <= 0) {
+        timeoutMilliseconds = 5000
+    }
+    var httpParams = (new BasicHttpParams())
+    HttpConnectionParams.setConnectionTimeout(httpParams, timeoutMilliseconds)
+
+    // set header for json request string
+    val setHeaderReturn = post.setHeader("Content-type","application/json")
+    // ad the json request string to the http post
+    val setEntityReturn = post.setEntity(new StringEntity(postBody))
+    // send the request to elasticsearch
+    //val response = (new DefaultHttpClient(httpParams)).execute(post)
+    val response = (new DefaultHttpClient).execute(post)
+    // get the status -- this code doesn't check for HTTP/1.1 200 OK response but the final code should!
+    val status = response.getStatusLine
+    // get the json response body
+    val responseBody = (new BasicResponseHandler).handleResponse(response).trim.toString
+
+    return responseBody
+  }
+
 
   def getHouseholdsWithoutRetention(spark:SparkSession,clientCode:String,esIndexName:String,esHost:String,esPort:Int,resultLimit:Int = 10000) :(String,Int) = {
 
@@ -272,6 +307,46 @@ object HouseholdRetentionProcessing {
     val sc = spark.sparkContext
     val sqlContext = spark.sqlContext
     import sqlContext.implicits._    
+
+    def countPersonsWithoutRetention(spark:SparkSession,clientCode:String,esIndexName:String,esHost:String,esPort:Int):Int = {
+        val sc = spark.sparkContext
+        val sqlContext = spark.sqlContext
+        import sqlContext.implicits._    
+        val personsWithoutRetention = s"""
+          {
+            "size": 0,
+            "query": {
+              "constant_score": {
+                "filter": {
+                  "bool": {
+                    "must": [
+                      {"term":{"client_code" : "${clientCode}" }},
+                      { "exists": { "field": "household.household_id"} }
+                    ],
+                    "must_not": [
+                      {
+                        "nested": {
+                          "path": "household_retention_history",
+                          "query": {
+                            "exists": { "field": "household_retention_history.retained"}
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        """
+        // generate the elasticsearch request string
+        val endPoint = "/"+ esIndexName + "/person/_search"
+        val responseBody = restCall(endPoint, esHost, esPort, personsWithoutRetention, restRequestTimeout)
+
+        // check the results to ensure there were any households returned
+        val dfCount = sqlContext.read.json(sc.parallelize(responseBody::Nil)).select($"hits.total")
+        return dfCount.first().getLong(0).asInstanceOf[Int]
+    }
 
     def getEncounterSourceData(spark:SparkSession,clientCode:String,esIndexName:String,esServer:String) :org.apache.spark.sql.DataFrame = {
 
@@ -548,47 +623,27 @@ object HouseholdRetentionProcessing {
         return householdRetentionFinal
     } // buildHouseholdRetentionFinal
 
-    var iterationCount:Int = 1
-    var lastCount:Int = 0
-    var households:String = ""
-
-    // get the next set of households to process
-    // val (householdList,householdCount) = getHouseholdsWithoutRetention(spark,clientCode,esIndexName,esServer,esServerPort,resultLimit)
-    //lastCount = householdCount
-    //households = householdList
-
-    //while ( lastCount > 0 ) {
-        //println("iteration " + iterationCount.toString + " household count " + lastCount.toString)
-        //iterationCount = iterationCount + 1
-
-        println("-------- run getPersonSourceData")
-        val personsES = getPersonSourceData(spark,clientCode,esIndexName,esServer)
-        println("-------- run getEncounterSourceData")
-        val encountersES = getEncounterSourceData(spark,clientCode,esIndexName,esServer)
-        println("-------- run getRetentionMonthRange")
-        val monthRangeFrame = getRetentionMonthRange(spark)
-        println("-------- run buildHouseholdRetentionBase")
-        val householdRetentionBase = buildHouseholdRetentionBase(spark)
-        println("-------- run buildHouseholdRetentionCollapsed")
-        val householdRetentionCollapsed = buildHouseholdRetentionCollapsed(spark)
-        println("-------- run buildHouseholdRetentionFinal")
-        val householdRetentionFinal = buildHouseholdRetentionFinal(spark)
-        println("-------- run writeHouseholdRetentionDataToPerson")
-        writeHouseholdRetentionDataToPerson(spark,householdRetentionFinal,esIndexName,esServer)
-        println("-------- run getEncounterSourceData")
-
-        encountersES.unpersist()
-        personsES.unpersist()
-        monthRangeFrame.unpersist()
-        householdRetentionBase.unpersist()
-        householdRetentionCollapsed.unpersist()
-        householdRetentionFinal.unpersist()
-
-        // get the next set of households to process
-        //val (householdList,householdCount) = getHouseholdsWithoutRetention(spark,clientCode,esIndexName,esServer,esServerPort,resultLimit)
-        //lastCount = householdCount
-        //households = householdList
-    //}
+    println("-------- Processing Households Retained - Run countPersonsWithoutRetention")
+    val personsWithoutRetentionCount = countPersonsWithoutRetention(spark,clientCode,esIndexName,esServer,esServerPort)
+    if (personsWithoutRetentionCount > 0) {
+      println("-------- Processing Households Retained - Run getPersonSourceData")
+      val personsES = getPersonSourceData(spark,clientCode,esIndexName,esServer)
+      println("-------- run getEncounterSourceData")
+      val encountersES = getEncounterSourceData(spark,clientCode,esIndexName,esServer)
+      println("-------- run getRetentionMonthRange")
+      val monthRangeFrame = getRetentionMonthRange(spark)
+      println("-------- run buildHouseholdRetentionBase")
+      val householdRetentionBase = buildHouseholdRetentionBase(spark)
+      println("-------- run buildHouseholdRetentionCollapsed")
+      val householdRetentionCollapsed = buildHouseholdRetentionCollapsed(spark)
+      println("-------- run buildHouseholdRetentionFinal")
+      val householdRetentionFinal = buildHouseholdRetentionFinal(spark)
+      println("-------- run writeHouseholdRetentionDataToPerson")
+      writeHouseholdRetentionDataToPerson(spark,householdRetentionFinal,esIndexName,esServer)
+    } else {
+      println("-------- no Persons to Process for Households Retained - Skipping Step")
+    }
+    println("-------- Run Complete - Processing Households Retained")
 
   } // processHouseholdRetentionRetained
 
@@ -596,6 +651,46 @@ object HouseholdRetentionProcessing {
     val sc = spark.sparkContext
     val sqlContext = spark.sqlContext
     import sqlContext.implicits._    
+
+    def countPersonsWithoutRetention(spark:SparkSession,clientCode:String,esIndexName:String,esHost:String,esPort:Int):Int = {
+        val sc = spark.sparkContext
+        val sqlContext = spark.sqlContext
+        import sqlContext.implicits._    
+        val personsWithoutRetention = s"""
+          {
+            "size":0,
+            "query": {
+              "constant_score": {
+                "filter": {
+                  "bool": {
+                    "must": [
+                      {"term":{"client_code" : "${clientCode}" }},
+                      { "exists": { "field": "household.household_id"} }
+                    ],
+                    "must_not": [
+                      {
+                        "nested": {
+                          "path": "household_retention_history",
+                          "query": {
+                            "exists": { "field": "household_retention_history.retained"}
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        """
+        // generate the elasticsearch request string
+        val endPoint = "/"+ esIndexName + "/person/_search"
+        val responseBody = restCall(endPoint, esHost, esPort, personsWithoutRetention, restRequestTimeout)
+
+        // check the results to ensure there were any households returned
+        val dfCount = sqlContext.read.json(sc.parallelize(responseBody::Nil)).select($"hits.total")
+        return dfCount.first().getLong(0).asInstanceOf[Int]
+    }
 
     def getPersonSourceData(spark:SparkSession,clientCode:String,esIndexName:String,esServer:String) :org.apache.spark.sql.DataFrame = {
         val sc = spark.sparkContext
@@ -687,7 +782,7 @@ object HouseholdRetentionProcessing {
 
         return householdRetentionFinal
     }
- 
+
     case class householdRetentionNotReadyException(private val message: String = "", private val cause: Throwable = None.orNull) extends Exception(message, cause) 
 
     val (householdList,householdCount) = getHouseholdsWithoutRetention(spark,clientCode,esIndexName,esServer,esServerPort)
@@ -695,9 +790,19 @@ object HouseholdRetentionProcessing {
         throw new householdRetentionNotReadyException("households eligible for retention are available and not processed.  Household retention processing step 1 needs to be run to completion before running step 2.")
     }
     val (min_month_epoch,max_month_epoch) = getRetentionMonthBounds()
-    val personsES = getPersonSourceData(spark,clientCode,esIndexName,esServer)
-    val householdRetentionFinal = buildHouseholdRetentionFinal(spark,min_month_epoch,max_month_epoch)
-    writeHouseholdRetentionDataToPerson(spark,householdRetentionFinal,esIndexName,esServer)
+    println("-------- Processing Households Not Retained - Run countPersonsWithoutRetention")
+    val personsWithoutRetentionCount = countPersonsWithoutRetention(spark,clientCode,esIndexName,esServer,esServerPort)
+    if (personsWithoutRetentionCount > 0) {
+      println("-------- Processing Households Not Retained - Run getPersonSourceData")
+      val personsES = getPersonSourceData(spark,clientCode,esIndexName,esServer)
+      println("-------- Run buildHouseholdRetentionFinal")
+      val householdRetentionFinal = buildHouseholdRetentionFinal(spark,min_month_epoch,max_month_epoch)
+      println("-------- Run writeHouseholdRetentionDataToPerson")
+      writeHouseholdRetentionDataToPerson(spark,householdRetentionFinal,esIndexName,esServer)
+    } else {
+      println("-------- no Persons to Process for Households Not Retained - Skipping Step")
+    }
+    println("-------- Run Complete")
 
 
 
